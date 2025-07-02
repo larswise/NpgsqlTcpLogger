@@ -1,0 +1,10 @@
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/bin/Debug/netstandard2.1/NpgSqlLogger.deps.json
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/bin/Debug/netstandard2.1/NpgSqlLogger.dll
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/bin/Debug/netstandard2.1/NpgSqlLogger.pdb
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.csproj.AssemblyReference.cache
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.GeneratedMSBuildEditorConfig.editorconfig
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.AssemblyInfoInputs.cache
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.AssemblyInfo.cs
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.csproj.CoreCompileInputs.cache
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.dll
+/home/lars/repos/Kapany/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/netstandard2.1/NpgSqlLogger.pdb
