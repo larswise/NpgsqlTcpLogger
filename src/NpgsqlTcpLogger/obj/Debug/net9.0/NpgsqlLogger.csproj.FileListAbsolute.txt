@@ -1,6 +1,0 @@
-/home/lars/repos/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/net9.0/NpgsqlLogger.csproj.AssemblyReference.cache
-/home/lars/repos/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/net9.0/NpgsqlLogger.GeneratedMSBuildEditorConfig.editorconfig
-/home/lars/repos/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/net9.0/NpgsqlLogger.AssemblyInfoInputs.cache
-/home/lars/repos/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/net9.0/NpgsqlLogger.AssemblyInfo.cs
-/home/lars/repos/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/net9.0/NpgsqlLogger.csproj.CoreCompileInputs.cache
-/home/lars/repos/NpgsqlTcpLogger/src/NpgsqlTcpLogger/obj/Debug/net9.0/NpgsqlLogger.MvcApplicationPartsAssemblyInfo.cache
