@@ -1,12 +1,9 @@
-using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 
 namespace NpgsqlTcpLogger;
 
@@ -14,18 +11,46 @@ public class TcpsqlLogger : ILogger
 {
     private readonly string _category;
     private readonly int _port; // Default port, can be overridden in constructor
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly bool _enableCallerDetection;
 
-    public TcpsqlLogger(string category, int port, IHttpContextAccessor httpContextAccessor)
+    // Connection pooling for better performance
+    private static readonly ConcurrentQueue<TcpClient> _connectionPool = new();
+    private static readonly object _poolLock = new();
+    private const int MaxPoolSize = 10;
+    private const int MaxRetries = 3;
+
+    // Reflection caching for better performance
+    private static readonly ConcurrentDictionary<
+        Type,
+        (FieldInfo? BatchField, FieldInfo? SqlField, FieldInfo? ParamField)
+    > _fieldCache = new();
+
+    // Compiled regex patterns for better performance
+    private static readonly Regex SqlStatementRegex = new(
+        @":\s(.+?)(?:\s+Parameters:|\s*$)",
+        RegexOptions.Compiled
+    );
+    private static readonly Regex DurationRegex = new(@"duration=(\d+)ms", RegexOptions.Compiled);
+    private static readonly Regex PureSqlRegex = new(@".:\s(.*)", RegexOptions.Compiled);
+
+    public TcpsqlLogger(
+        string category,
+        int port,
+        IHttpContextAccessor? httpContextAccessor,
+        bool enableCallerDetection = true
+    )
     {
         _category = category;
         _port = port;
         _httpContextAccessor = httpContextAccessor;
+        _enableCallerDetection = enableCallerDetection;
     }
 
-    public IDisposable BeginScope<TState>(TState state)
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull
     {
-        return null!;
+        return null;
     }
 
     public bool IsEnabled(LogLevel logLevel) => _category.StartsWith("Npgsql");
@@ -40,57 +65,54 @@ public class TcpsqlLogger : ILogger
     {
         try
         {
-            Console.WriteLine("Log entry");
             var statement = formatter(state, exception);
             var timestamp = DateTime.UtcNow;
 
             // Grab pure SQL from log (removes Npgsql prefix)
-            var sqlMatch = Regex.Match(statement, @":\s(.+?)(?:\s+Parameters:|\s*$)");
+            var sqlMatch = SqlStatementRegex.Match(statement);
             string sql = sqlMatch.Success ? sqlMatch.Groups[1].Value.Trim() : statement;
 
             // Extract typed parameters from state using reflection
-            var interpolatedSql = ExtractInterpolatedSqlFromState(state);
+            var interpolatedSql = state != null ? ExtractInterpolatedSqlFromState(state) : null;
 
             // HTTP context info
-            var httpCtx = _httpContextAccessor.HttpContext;
-            if (httpCtx.Request.Method == HttpMethods.Options)
+            var httpCtx = _httpContextAccessor?.HttpContext;
+            if (httpCtx?.Request.Method == HttpMethods.Options)
             {
-                Console.WriteLine("Skipping OPTIONS request");
                 return; // Skip OPTIONS requests
             }
-            string? path = $"{httpCtx?.Request.Path} [{httpCtx?.Request.Method}]";
-            string? controller = httpCtx?.RequestServices.ToString();
 
-            // Caller info (optional, see below)
-            var stack = new StackTrace();
-            var frame = stack.GetFrame(3); // Adjust depth
-            var method = frame?.GetMethod();
-            string? caller = $"{method?.DeclaringType?.Name}.{method?.Name}";
-            var match = Regex.Match(statement, @"duration=(\d+)ms");
+            // Enhanced caller detection - find the actual business logic method (optional for performance)
+            var (callerClass, callerMethod, callerNamespace) = _enableCallerDetection
+                ? GetActualCaller()
+                : (null, null, null);
+
+            // HTTP context info (fallback for web apps)
+            string? endpoint =
+                httpCtx != null ? $"{httpCtx.Request.Path} [{httpCtx.Request.Method}]" : null;
+            var match = DurationRegex.Match(statement);
             var duration = 0;
             int.TryParse(match.Groups[1].Value, out duration);
 
-            var pureSqlRegex = Regex.Match(statement, @".:\s(.*)");
+            var pureSqlRegex = PureSqlRegex.Match(statement);
             var pureSql = pureSqlRegex.Groups[1]?.Value;
 
             var loggedStatement = interpolatedSql ?? "what happening here??";
-            Console.WriteLine($"Logged SQL: {loggedStatement}");
             var payload = new
             {
                 timestamp,
                 statement = loggedStatement,
                 duration,
-                endpoint = path,
-                controller,
-                caller,
+                endpoint,
+                caller_class = callerClass,
+                caller_method = callerMethod,
+                caller_namespace = callerNamespace,
                 http_method = httpCtx?.Request.Method,
             };
 
             var json = JsonSerializer.Serialize(payload);
-
-            var client = new TcpClient("localhost", _port); // Simple reconnect each time (optimize later)
-            using var writer = new StreamWriter(client.GetStream());
-            writer.WriteLine(json);
+            // Make logging async to avoid blocking the main thread
+            _ = Task.Run(() => SendLog(json));
         }
         catch
         {
@@ -102,11 +124,28 @@ public class TcpsqlLogger : ILogger
     {
         var stateType = state.GetType();
 
-        // Handle batch
-        var batchField = stateType.GetField(
-            "_BatchCommands",
-            BindingFlags.NonPublic | BindingFlags.Instance
+        // Get cached field info or create new entry
+        var (batchField, sqlField, paramField) = _fieldCache.GetOrAdd(
+            stateType,
+            type =>
+            {
+                var batch = type.GetField(
+                    "_BatchCommands",
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
+                var sql = type.GetField(
+                    "_CommandText",
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
+                var param = type.GetField(
+                    "_Parameters",
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
+                return (batch, sql, param);
+            }
         );
+
+        // Handle batch
         if (batchField?.GetValue(state) is ValueTuple<string, object[]>[] batchCommands)
         {
             var sb = new System.Text.StringBuilder();
@@ -123,15 +162,6 @@ public class TcpsqlLogger : ILogger
         }
 
         // Handle single command
-        var sqlField = stateType.GetField(
-            "_CommandText",
-            BindingFlags.NonPublic | BindingFlags.Instance
-        );
-        var paramField = stateType.GetField(
-            "_Parameters",
-            BindingFlags.NonPublic | BindingFlags.Instance
-        );
-
         if (sqlField?.GetValue(state) is string singleSql)
         {
             var parameters = paramField?.GetValue(state) as object[];
@@ -141,9 +171,14 @@ public class TcpsqlLogger : ILogger
         return null;
     }
 
-    string InterpolateSql(string rawSql, object[] parameters)
+    string InterpolateSql(string rawSql, object[]? parameters)
     {
         string result = rawSql;
+
+        if (parameters == null || parameters.Length == 0)
+        {
+            return result; // No parameters to interpolate
+        }
 
         for (int i = parameters.Length; i >= 1; i--) // Descending: $10 before $1
         {
@@ -177,5 +212,182 @@ public class TcpsqlLogger : ILogger
         }
 
         return result;
+    }
+
+    private (string? callerClass, string? callerMethod, string? callerNamespace) GetActualCaller()
+    {
+        var stackTrace = new StackTrace();
+        var frames = stackTrace.GetFrames();
+
+        if (frames == null)
+            return (null, null, null);
+
+        // Skip frames until we get past Npgsql, logging infrastructure, and framework code
+        for (int i = 0; i < frames.Length; i++)
+        {
+            var method = frames[i].GetMethod();
+            if (method?.DeclaringType == null)
+                continue;
+
+            var declaringType = method.DeclaringType;
+            var namespaceName = declaringType.Namespace ?? "";
+            var className = declaringType.Name;
+            var methodName = method.Name;
+
+            // Skip our own logging code
+            if (namespaceName.StartsWith("NpgsqlTcpLogger"))
+                continue;
+
+            // Skip ALL Npgsql internal code (including AbstractBatcher, etc.)
+            if (namespaceName.StartsWith("Npgsql"))
+                continue;
+
+            // Skip Microsoft logging infrastructure
+            if (namespaceName.StartsWith("Microsoft.Extensions.Logging"))
+                continue;
+
+            // Skip Entity Framework if present
+            if (namespaceName.StartsWith("Microsoft.EntityFrameworkCore"))
+                continue;
+
+            // Skip Dapper if present
+            if (namespaceName.StartsWith("Dapper"))
+                continue;
+
+            // Skip System namespaces
+            if (namespaceName.StartsWith("System"))
+                continue;
+
+            // Skip .NET runtime namespaces
+            if (namespaceName.StartsWith("Microsoft.Extensions"))
+                continue;
+
+            // Skip async state machine generated methods
+            if (className.Contains("<") || methodName.Contains("<"))
+                continue;
+
+            // Skip compiler-generated classes
+            if (className.StartsWith("<>"))
+                continue;
+
+            // Skip specific known internal classes that might slip through
+            if (
+                className.Contains("Batcher")
+                || className.Contains("Reader")
+                || className.Contains("Command")
+            )
+                continue;
+
+            // Skip generic Task/async infrastructure
+            if (namespaceName.StartsWith("System.Threading.Tasks"))
+                continue;
+
+            // Skip more specific Npgsql patterns that might slip through
+            if (
+                className.Contains("Abstract")
+                || className.Contains("Internal")
+                || className.Contains("Connection")
+            )
+                continue;
+
+            // Skip runtime and compiler generated stuff
+            if (namespaceName.StartsWith("Microsoft.") || namespaceName.StartsWith("System."))
+                continue;
+
+            // Skip empty or null namespaces (usually internal stuff)
+            if (string.IsNullOrEmpty(namespaceName))
+                continue;
+
+            // Skip common data access layer patterns - we want the business logic that calls them
+            if (
+                className.Contains("Loader")
+                || className.Contains("Repository")
+                || className.Contains("DataAccess")
+                || className.Contains("Dal")
+                || className.Contains("Dao")
+                || methodName.Contains("Query")
+                || methodName.Contains("Execute")
+                || methodName.Contains("Fetch")
+                || methodName.Contains("Load")
+                || className.Contains("Context") // EF DbContext
+                || className.Contains("Gateway")
+                || className.Contains("Mapper")
+            )
+                continue;
+
+            // This should be our actual caller
+            return (className, methodName, namespaceName);
+        }
+
+        // Fallback if we couldn't find a good caller
+        return (null, null, null);
+    }
+
+    private void SendLog(string json)
+    {
+        for (int retry = 0; retry < MaxRetries; retry++)
+        {
+            TcpClient? client = null;
+            try
+            {
+                // Try to get a connection from the pool
+                if (!_connectionPool.TryDequeue(out client) || !IsClientConnected(client))
+                {
+                    client?.Close();
+                    client = new TcpClient();
+                    client.Connect("localhost", _port);
+                }
+
+                // Send the log
+                using var writer = new StreamWriter(client.GetStream());
+                writer.WriteLine(json);
+                writer.Flush();
+
+                // Return connection to pool if it's still good and pool isn't full
+                if (IsClientConnected(client))
+                {
+                    lock (_poolLock)
+                    {
+                        if (_connectionPool.Count < MaxPoolSize)
+                        {
+                            _connectionPool.Enqueue(client);
+                            client = null; // Don't dispose it
+                        }
+                    }
+                }
+
+                return; // Success, exit retry loop
+            }
+            catch
+            {
+                // Connection failed, clean up and retry
+                client?.Close();
+                client = null;
+
+                if (retry == MaxRetries - 1)
+                {
+                    // Last retry failed, give up silently
+                    return;
+                }
+            }
+            finally
+            {
+                // Only dispose if we didn't return it to the pool
+                client?.Close();
+            }
+        }
+    }
+
+    private static bool IsClientConnected(TcpClient? client)
+    {
+        try
+        {
+            return client?.Connected == true
+                && client.Client?.Poll(0, SelectMode.SelectRead) == false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
