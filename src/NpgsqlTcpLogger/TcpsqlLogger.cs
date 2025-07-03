@@ -305,13 +305,24 @@ public class TcpsqlLogger : ILogger
                 || className.Contains("DataAccess")
                 || className.Contains("Dal")
                 || className.Contains("Dao")
+                || className.Contains("Session") // NHibernate, custom sessions
+                || className.EndsWith("Impl") // Implementation classes
                 || methodName.Contains("Query")
                 || methodName.Contains("Execute")
                 || methodName.Contains("Fetch")
                 || methodName.Contains("Load")
+                || methodName.Contains("List") // Common CRUD operation
+                || methodName.Contains("Get") // Common CRUD operation
+                || methodName.Contains("Save") // Common CRUD operation
+                || methodName.Contains("Update") // Common CRUD operation
+                || methodName.Contains("Delete") // Common CRUD operation
+                || methodName.Contains("Find") // Common CRUD operation
                 || className.Contains("Context") // EF DbContext
                 || className.Contains("Gateway")
                 || className.Contains("Mapper")
+                || className.Contains("Manager") // Data managers
+                || className.Contains("Provider") // Data providers
+                || className.Contains("Service") // Generic services (might be data services)
             )
                 continue;
 
