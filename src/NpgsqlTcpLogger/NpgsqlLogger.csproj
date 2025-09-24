@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <Version>1.0.5</Version>
-    <Description>Logs PostgreSQL network traffic to a tcp socket for diagnostics and debugging.</Description>
+    <Version>1.0.7</Version>
+    <Description>Logs PostgreSQL queries done via NpgSql to a tcp socket for diagnostics and debugging.</Description>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
