@@ -11,9 +11,27 @@ public static class NpgsqlExtensions
     /// <param name="port">The port to send logs to.</param>
     /// <param name="enableCallerDetection">Whether to enable expensive caller detection for better debugging (default: true).</param>
     /// <returns>The updated web application.</returns>
-    public static WebApplication AddNpgsqlTcpLogger(this WebApplication app, int port = 6000, bool enableCallerDetection = true)
+    public static WebApplicationBuilder AddNpgsqlTcpLogger(
+        this WebApplicationBuilder builder,
+        int port = 6000,
+        bool enableCallerDetection = true
+    )
     {
-        var accessor = app.Services.GetRequiredService<IHttpContextAccessor>();
+        HttpContextAccessor? accessor = null;
+        var hasAccessor = builder.Services.Any(b => b.ServiceType == typeof(IHttpContextAccessor));
+        if (!hasAccessor)
+        {
+            accessor = new HttpContextAccessor();
+            builder.Services.AddSingleton<IHttpContextAccessor>(accessor);
+        }
+        else
+        {
+            using (var tempProvider = builder.Services.BuildServiceProvider())
+            {
+                accessor =
+                    tempProvider.GetRequiredService<IHttpContextAccessor>() as HttpContextAccessor;
+            }
+        }
 
         var loggerFactory = LoggerFactory.Create(loggingBuilder =>
         {
@@ -24,7 +42,7 @@ public static class NpgsqlExtensions
 
         // 🔥 Register that factory with Npgsql
         NpgsqlLoggingConfiguration.InitializeLogging(loggerFactory, true);
-        return app;
+        return builder;
     }
 
     /// <summary>
@@ -34,7 +52,11 @@ public static class NpgsqlExtensions
     /// <param name="port">The port to send logs to.</param>
     /// <param name="enableCallerDetection">Whether to enable expensive caller detection for better debugging (default: true).</param>
     /// <returns>The updated host builder.</returns>
-    public static IHostBuilder AddNpgsqlTcpLogger(this IHostBuilder builder, int port = 6000, bool enableCallerDetection = true)
+    public static IHostBuilder AddNpgsqlTcpLogger(
+        this IHostBuilder builder,
+        int port = 6000,
+        bool enableCallerDetection = true
+    )
     {
         return builder.ConfigureLogging(loggingBuilder =>
         {
