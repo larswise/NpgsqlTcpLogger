@@ -19,15 +19,18 @@ public static class NpgsqlExtensions
     {
         HttpContextAccessor? accessor = null;
         var hasAccessor = builder.Services.Any(b => b.ServiceType == typeof(IHttpContextAccessor));
-        if(!hasAccessor) 
+        if (!hasAccessor)
         {
             accessor = new HttpContextAccessor();
             builder.Services.AddSingleton<IHttpContextAccessor>(accessor);
         }
-        else {
-            accessor = builder.Services
-                .First(b => b.ServiceType == typeof(IHttpContextAccessor))
-                .ImplementationInstance as HttpContextAccessor;
+        else
+        {
+            using (var tempProvider = builder.Services.BuildServiceProvider())
+            {
+                accessor =
+                    tempProvider.GetRequiredService<IHttpContextAccessor>() as HttpContextAccessor;
+            }
         }
 
         var loggerFactory = LoggerFactory.Create(loggingBuilder =>
