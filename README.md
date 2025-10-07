@@ -1,6 +1,6 @@
 # NpgsqlTcpLogger
 
-NpgsqlTcpLogger is a high-performance logging library that captures PostgreSQL database queries from Npgsql and transmits them via TCP to a monitoring application in real-time. It provides detailed SQL query logging with parameter interpolation, execution duration tracking, and intelligent caller detection to identify the exact business logic method that triggered each database call. The logger is optimized for production use with connection pooling, reflection caching, compiled regex patterns, and async logging to minimize performance impact on your application.
+NpgsqlTcpLogger is a high-performance logging library that captures PostgreSQL database queries from Npgsql and transmits them via TCP to a monitoring application in real-time. It provides detailed SQL query logging with parameter interpolation, execution duration tracking, and intelligent caller detection to identify the exact business logic method that triggered each database call. The logger is optimized for production use with connection pooling, reflection caching, compiled regex patterns, and async logging to minimize performance impact on your application. Do not run this in production, this is indended for development only. Use a configuration with #if/#endif.
 
 ## Installation
 
@@ -15,13 +15,20 @@ dotnet add package NpgsqlTcpLogger
 ### For ASP.NET Core Web Applications
 
 ```csharp
-var app = WebApplication.CreateBuilder(args).Build();
+// add using
+using NpgsqlTcpLogger.Extensions;
 
-// Add NpgsqlTcpLogger with default settings
-app.AddNpgsqlTcpLogger();
+// create your webapplicationbuilder
+var builder = WebApplication.CreateBuilder(args);
+
+// register what you need... then
+
+builder.AddNpgsqlTcpLogger();
 
 // Or customize port and performance settings
-app.AddNpgsqlTcpLogger(port: 6000, enableCallerDetection: true);
+builder.AddNpgsqlTcpLogger(port: 6000, enableCallerDetection: false);
+
+var app = builder.Build();
 
 app.Run();
 ```
