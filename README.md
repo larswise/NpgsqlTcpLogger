@@ -7,7 +7,7 @@ NpgsqlTcpLogger is a high-performance logging library that captures PostgreSQL d
 Install the package via NuGet:
 
 ```bash
-dotnet add package NpgsqlTcpLogger
+dotnet add package NpgsqlLogger
 ```
 
 ## Usage
