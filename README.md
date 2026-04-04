@@ -2,6 +2,8 @@
 
 NpgsqlTcpLogger is a high-performance logging library that captures PostgreSQL database queries from Npgsql and transmits them via TCP to a monitoring application in real-time. It provides detailed SQL query logging with parameter interpolation, execution duration tracking, and intelligent caller detection to identify the exact business logic method that triggered each database call. The logger is optimized for production use with connection pooling, reflection caching, compiled regex patterns, and async logging to minimize performance impact on your application. Do not run this in production, this is indended for development only. Use a configuration with #if/#endif.
 
+<img width="1983" height="1123" alt="pgquerymon" src="https://github.com/user-attachments/assets/0c6ce250-6df6-4cc0-9f3e-5c0fe10a7c49" />
+
 ## Installation
 
 Install the package via NuGet:
